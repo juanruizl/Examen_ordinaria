@@ -11,9 +11,11 @@ Ejecucion:
 """
 
 import heapq
+import json
 import os
 
 ARCHIVO_POR_DEFECTO = "red_transporte.txt"
+ARCHIVO_INFORME = "informe_red.json"
 
 
 class RedTransporte:
@@ -46,6 +48,16 @@ class RedTransporte:
                         continue
 
                     partes = linea.split(",")
+
+                    # Linea con un unico campo: estacion aislada (sin conexiones)
+                    if len(partes) == 1:
+                        nombre = partes[0].strip()
+                        if not nombre:
+                            print(f"[Aviso] Linea {numero} ignorada (nombre vacio): {linea}")
+                            continue
+                        self.grafo.setdefault(nombre, {})
+                        continue
+
                     if len(partes) != 3:
                         print(f"[Aviso] Linea {numero} ignorada (formato invalido): {linea}")
                         continue
@@ -71,11 +83,19 @@ class RedTransporte:
             print(f"[Error] No se pudo leer el archivo: {e}")
 
     def guardar_en_archivo(self):
-        """Guarda la red en el archivo asociado evitando duplicar aristas."""
+        """Guarda la red en el archivo asociado evitando duplicar aristas.
+
+        Las estaciones sin conexiones se persisten como una linea con solo el
+        nombre de la estacion, para que no se pierdan al guardar y recargar.
+        """
         try:
             with open(self.archivo, "w", encoding="utf-8") as f:
                 escritas = set()
                 for origen in sorted(self.grafo):
+                    if not self.grafo[origen]:
+                        # Estacion aislada: una linea con solo el nombre
+                        f.write(f"{origen}\n")
+                        continue
                     for destino, minutos in sorted(self.grafo[origen].items()):
                         # Usamos un frozenset para tratar (A,B) y (B,A) como la misma arista
                         clave = frozenset((origen, destino))
@@ -240,25 +260,105 @@ class RedTransporte:
         return False
 
     # ------------------------------------------------------------------
+    # Funcionalidades bonus
+    # ------------------------------------------------------------------
+    def obtener_estacion_hub(self):
+        """Devuelve las estaciones con mayor grado y ese grado maximo.
+
+        Como puede haber empates, se devuelve una lista de nombres ordenada.
+        Si la red esta vacia se devuelve ([], 0).
+        """
+        if not self.grafo:
+            return [], 0
+        max_grado = max(len(vecinos) for vecinos in self.grafo.values())
+        hubs = sorted(
+            estacion for estacion, vecinos in self.grafo.items()
+            if len(vecinos) == max_grado
+        )
+        return hubs, max_grado
+
+    def exportar_informe_json(self, archivo=ARCHIVO_INFORME):
+        """Exporta un informe resumen de la red en formato JSON."""
+        if not self.grafo:
+            print("[Error] La red esta vacia, no se puede exportar el informe.")
+            return False
+
+        hubs, grado = self.obtener_estacion_hub()
+        # Cada conexion esta guardada en ambos sentidos, por eso dividimos entre 2
+        numero_conexiones = sum(len(v) for v in self.grafo.values()) // 2
+
+        datos = {
+            "numero_estaciones": len(self.grafo),
+            "numero_conexiones": numero_conexiones,
+            "estaciones_hub": hubs,
+            "grado_hub": grado,
+        }
+
+        try:
+            with open(archivo, "w", encoding="utf-8") as f:
+                json.dump(datos, f, indent=4, ensure_ascii=False)
+            print(f"[OK] Informe exportado a '{archivo}'.")
+            return True
+        except OSError as e:
+            print(f"[Error] No se pudo escribir el informe: {e}")
+            return False
+
+    def dijkstra_con_intermedia(self, origen, intermedia, destino):
+        """Calcula la ruta mas rapida origen -> intermedia -> destino.
+
+        Reutiliza el metodo dijkstra existente en dos tramos. Devuelve la
+        tupla (ruta_completa, tiempo_total) o (None, None) si alguno de los
+        dos tramos no tiene ruta.
+        """
+        origen = origen.strip()
+        intermedia = intermedia.strip()
+        destino = destino.strip()
+
+        for nombre in (origen, intermedia, destino):
+            if not nombre:
+                print("[Error] Los nombres de las estaciones no pueden estar vacios.")
+                return None, None
+            if nombre not in self.grafo:
+                print(f"[Error] La estacion '{nombre}' no existe.")
+                return None, None
+
+        ruta1, t1 = self.dijkstra(origen, intermedia)
+        if ruta1 is None:
+            print(f"No existe ruta entre '{origen}' y la intermedia '{intermedia}'.")
+            return None, None
+
+        ruta2, t2 = self.dijkstra(intermedia, destino)
+        if ruta2 is None:
+            print(f"No existe ruta entre la intermedia '{intermedia}' y '{destino}'.")
+            return None, None
+
+        # Unir las dos rutas evitando duplicar la estacion intermedia
+        ruta_completa = ruta1 + ruta2[1:]
+        return ruta_completa, t1 + t2
+
+    # ------------------------------------------------------------------
     # Menu interactivo
     # ------------------------------------------------------------------
     def menu(self):
         """Bucle principal del menu de consola."""
         opciones = (
             "\n==== PLANIFICADOR DE RUTAS DE TRANSPORTE ====\n"
-            "1. Mostrar estaciones\n"
-            "2. Mostrar conexiones de una estacion\n"
-            "3. Anadir estacion\n"
-            "4. Anadir conexion\n"
-            "5. Calcular ruta mas rapida (Dijkstra)\n"
-            "6. Comprobar si existe camino entre dos estaciones\n"
-            "7. Guardar red\n"
-            "8. Salir\n"
+            " 1. Mostrar estaciones\n"
+            " 2. Mostrar conexiones de una estacion\n"
+            " 3. Anadir estacion\n"
+            " 4. Anadir conexion\n"
+            " 5. Calcular ruta mas rapida (Dijkstra)\n"
+            " 6. Comprobar si existe camino entre dos estaciones\n"
+            " 7. Guardar red\n"
+            " 8. Salir\n"
+            " 9. Mostrar estacion hub\n"
+            "10. Exportar informe JSON de la red\n"
+            "11. Calcular ruta mas rapida pasando por estacion intermedia\n"
         )
 
         while True:
             print(opciones)
-            opcion = input("Elige una opcion (1-8): ").strip()
+            opcion = input("Elige una opcion (1-11): ").strip()
 
             if opcion == "1":
                 self.mostrar_estaciones()
@@ -310,8 +410,31 @@ class RedTransporte:
                 print("Saliendo del programa. Hasta pronto.")
                 break
 
+            elif opcion == "9":
+                hubs, grado = self.obtener_estacion_hub()
+                if not hubs:
+                    print("La red esta vacia, no hay estacion hub.")
+                elif len(hubs) == 1:
+                    print(f"Estacion hub: '{hubs[0]}' con {grado} conexiones directas.")
+                else:
+                    print(f"Hay {len(hubs)} estaciones empatadas con grado {grado}:")
+                    for h in hubs:
+                        print(f"  - {h}")
+
+            elif opcion == "10":
+                self.exportar_informe_json()
+
+            elif opcion == "11":
+                origen = input("Estacion origen: ")
+                intermedia = input("Estacion intermedia (obligatoria): ")
+                destino = input("Estacion destino: ")
+                ruta, tiempo = self.dijkstra_con_intermedia(origen, intermedia, destino)
+                if ruta is not None:
+                    print("Ruta mas rapida (pasando por intermedia): " + " -> ".join(ruta))
+                    print(f"Tiempo total: {tiempo} minutos")
+
             else:
-                print("[Error] Opcion no valida. Introduce un numero del 1 al 8.")
+                print("[Error] Opcion no valida. Introduce un numero del 1 al 11.")
 
 
 def main():

@@ -34,22 +34,35 @@ si existe. Si no existe, comienza con una red vacia.
 
 ## Formato del archivo de datos
 
-Cada linea representa una conexion bidireccional con el formato:
+El archivo admite dos tipos de líneas:
 
-```
-origen,destino,minutos
-```
+1. **Línea de conexión** (3 campos separados por coma):
 
-Ejemplo:
+   ```
+   origen,destino,minutos
+   ```
+
+2. **Línea de estación aislada** (1 único campo, sin comas):
+
+   ```
+   estacion
+   ```
+
+   Sirve para conservar estaciones que todavía no tienen ninguna conexión.
+   Sin esta línea, una estación aislada se perdería al guardar y recargar.
+
+Ejemplo combinado:
 
 ```
 Atocha,Sol,5
 Sol,Gran Via,3
+EstacionSinConexiones
 ```
 
-Las lineas vacias o que empiecen por `#` se ignoran. Como el grafo es no
-dirigido, cada conexion se guarda **una sola vez** aunque se cargue en ambos
-sentidos en memoria.
+Las líneas vacías o que empiecen por `#` se ignoran. Como el grafo es no
+dirigido, cada conexión se guarda **una sola vez** aunque se cargue en ambos
+sentidos en memoria. El formato es compatible con archivos antiguos que solo
+contienen líneas de conexión.
 
 ## Opciones del menu
 
@@ -183,11 +196,11 @@ de diccionarios:
 Esta estructura es adecuada porque el acceso a un diccionario por clave es de
 **tiempo medio O(1)** gracias a la tabla hash interna de Python. Eso permite:
 
-- Comprobar si una estación existe en O(1).
-- Obtener todas las conexiones directas de una estación en O(1) (acceso al
-  diccionario interno).
-- Recorrer los vecinos de una estación en tiempo proporcional al número de
-  vecinos, no al total de estaciones.
+- Comprobar si una estación existe en **O(1)**.
+- Acceder al diccionario de conexiones de una estación concreta también en
+  **O(1)** (es solo una búsqueda por clave).
+- **Recorrer** todas las conexiones de esa estación cuesta **O(k)**, donde *k*
+  es el número de vecinos de la estación, no el total de estaciones del grafo.
 
 Una alternativa habría sido usar una **matriz de adyacencia**, pero ocuparía
 O(V²) aunque la red fuera dispersa, mientras que la lista de adyacencia ocupa
@@ -231,12 +244,12 @@ información en disco.
 |---|---|---|
 | Añadir una estación | **O(1)** | Se inserta una nueva clave en el diccionario. |
 | Añadir una conexión | **O(1)** | Se comprueba la existencia de las estaciones (O(1)) y se inserta en los dos diccionarios de adyacencia (no dirigido). |
-| Mostrar conexiones de una estación | **O(k)** | k es el número de vecinos directos de esa estación. |
-| Mostrar todas las estaciones | **O(V log V)** | Por el `sorted()` que ordena los nombres para mostrarlos. |
-| Dijkstra | **O((V + E) log V)** | Cada arista puede provocar como mucho una inserción en el heap, y cada operación del heap cuesta O(log V). |
+| Mostrar conexiones de una estación | **O(k)** | *k* es el número de vecinos directos de esa estación. El acceso a su diccionario es O(1), pero recorrerlo es O(k). |
+| Mostrar todas las estaciones | **O(V log V)** | Por el `sorted()` que ordena los nombres antes de mostrarlos. |
+| Dijkstra | **O((V + E) log V)** | Es la complejidad habitual usando `heapq`; aunque una misma estación pueda insertarse varias veces en el heap, cada operación cuesta O(log V) y el número total de inserciones está acotado por E. |
 | BFS (existe camino) | **O(V + E)** | En el peor caso visita todas las estaciones y recorre todas las conexiones una vez. |
 | Cargar la red desde archivo | **O(E)** | Se procesa una línea por cada conexión y cada inserción es O(1). |
-| Guardar la red en archivo | **O(V + E)** | Se recorren todas las estaciones y todas sus conexiones, usando un `set` de aristas ya escritas para no duplicar. El `sorted()` añade un factor logarítmico. |
+| Guardar la red en archivo | **O(V + E)** | El coste principal es recorrer las estaciones y todas sus conexiones, usando un `set` de aristas ya escritas para no duplicar. Si además se ordenan los datos con `sorted()`, se añade un coste logarítmico. |
 
 Sobre **Dijkstra**: el algoritmo selecciona en cada paso la estación no
 visitada con menor distancia acumulada. Gracias al heap esa selección es O(log
@@ -246,15 +259,16 @@ como una red de metro real.
 
 ### 3. Complejidad espacial
 
-- **Grafo en memoria**: O(V + E). Hay V claves en el diccionario externo y, en
-  total, las listas de vecinos suman 2·E entradas porque cada arista se guarda
-  en los dos sentidos. Esto se simplifica como **O(V + E)**.
+- **Grafo en memoria**: en un grafo no dirigido cada conexión se guarda en
+  ambos sentidos, por lo que internamente las listas de vecinos suman 2·E
+  entradas. Sumando las V claves del diccionario externo, el coste total se
+  simplifica como **O(V + E)**.
 - **Dijkstra**: utiliza un diccionario de distancias (O(V)), un diccionario de
   predecesores (O(V)), un conjunto de visitados (O(V)) y un heap que en el peor
   caso puede contener O(E) entradas. Coste total aproximado **O(V + E)**.
 - **BFS**: usa un `set` de visitados y una cola, ambos con coste **O(V)** en el
   peor caso.
-- **Archivo en disco**: O(E), una línea por conexión.
+- **Archivo en disco**: **O(E)**, una línea por conexión.
 
 ### 4. Posibles mejoras
 
@@ -280,3 +294,111 @@ Algunas extensiones razonables para una versión futura del proyecto:
   con autocompletado de nombres o sugerencias cuando una estación no existe.
 - **Añadir documentación más detallada** de cada función con `docstrings` y
   generar documentación automática con herramientas como `pydoc`.
+
+## Bonus
+
+El proyecto incluye tres funcionalidades adicionales que amplían la
+clase `RedTransporte` y añaden las opciones **9**, **10** y **11** al menú.
+
+### 1. Estación hub
+
+Una estación **hub** es la que tiene más conexiones directas con otras
+estaciones, es decir, la de mayor **grado**. En un grafo no dirigido representado
+como lista de adyacencia, el grado de una estación es simplemente:
+
+```python
+len(self.grafo[estacion])
+```
+
+El método `obtener_estacion_hub()` recorre todas las estaciones, calcula su
+grado y devuelve una **lista** con las estaciones empatadas en el grado máximo,
+junto con ese grado. Devolver una lista permite reflejar correctamente los
+empates (típicos en redes pequeñas).
+
+- **Complejidad temporal**: **O(V)**, porque se recorren todas las estaciones
+  una vez para comparar sus grados.
+- **Complejidad espacial**: **O(H)**, donde *H* es el número de estaciones
+  empatadas como hub. En el peor caso *H* = V, pero normalmente es muy
+  pequeño.
+
+### 2. Informe JSON
+
+El método `exportar_informe_json()` guarda un resumen de la red en el archivo
+`informe_red.json` usando el módulo estándar `json` con `indent=4` y
+`ensure_ascii=False` para que sea legible y conserve los acentos.
+
+Datos exportados:
+
+- `numero_estaciones`: total de nodos del grafo, calculado como `len(self.grafo)`.
+- `numero_conexiones`: total de aristas. Como el grafo es no dirigido y cada
+  conexión se guarda internamente en los dos sentidos, hay que **dividir entre
+  2** para no contarlas dos veces:
+
+  ```python
+  sum(len(vecinos) for vecinos in self.grafo.values()) // 2
+  ```
+
+- `estaciones_hub`: lista con las estaciones de mayor grado.
+- `grado_hub`: número de conexiones directas del hub.
+
+La escritura está protegida con `try/except OSError` para informar al usuario si
+no se puede crear el archivo.
+
+- **Complejidad temporal**: **O(V + E)**, porque se recorren las estaciones y
+  todas sus conexiones para contarlas y para detectar el hub.
+- **Complejidad espacial**: **O(V)** como máximo (un diccionario con la
+  información del informe), aunque en la práctica el contenido es muy pequeño.
+
+### 3. Ruta más rápida pasando por una estación intermedia
+
+El método `dijkstra_con_intermedia(origen, intermedia, destino)` calcula la ruta
+más rápida que **obligatoriamente** debe pasar por una estación intermedia.
+
+La idea es reutilizar el Dijkstra ya implementado y dividir el problema en dos
+tramos:
+
+1. `dijkstra(origen, intermedia)` → ruta1, t1
+2. `dijkstra(intermedia, destino)` → ruta2, t2
+
+Si los dos tramos existen, se unen evitando duplicar la estación intermedia:
+
+```python
+ruta_completa = ruta1 + ruta2[1:]
+tiempo_total = t1 + t2
+```
+
+Si alguno de los dos tramos no tiene ruta, se avisa al usuario de que no existe
+camino completo pasando por esa intermedia. También se validan los tres nombres
+antes de ejecutar nada.
+
+Para que esto funcione, el método `dijkstra` devuelve una tupla
+`(ruta, distancia)` o `(None, None)` si no hay camino, sin perder la salida por
+pantalla que ya usaba la opción 5 del menú.
+
+- **Complejidad temporal**: **O(2 · (V + E) log V)**, que se simplifica como
+  **O((V + E) log V)** porque la constante 2 desaparece en notación O grande.
+- **Complejidad espacial**: **O(V + E)**, igual que Dijkstra normal, ya que se
+  usan las mismas estructuras auxiliares (distancias, predecesores, heap).
+
+### Opciones añadidas al menú
+
+```
+ 9. Mostrar estacion hub
+10. Exportar informe JSON de la red
+11. Calcular ruta mas rapida pasando por estacion intermedia
+```
+
+### Ejemplo de `informe_red.json`
+
+```json
+{
+    "numero_estaciones": 11,
+    "numero_conexiones": 12,
+    "estaciones_hub": [
+        "Gran Via",
+        "Retiro",
+        "Sol"
+    ],
+    "grado_hub": 3
+}
+```
