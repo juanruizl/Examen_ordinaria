@@ -1,0 +1,12 @@
+Atocha,Sol,5
+Sol,Gran Via,3
+Sol,Retiro,4
+Atocha,Retiro,7
+Gran Via,Chueca,2
+Chueca,Alonso Martinez,3
+Alonso Martinez,Bilbao,2
+Bilbao,Tribunal,3
+Tribunal,Gran Via,2
+Retiro,Principe de Vergara,4
+Principe de Vergara,Goya,3
+Goya,Velazquez,2
